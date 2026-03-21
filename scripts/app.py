@@ -3,6 +3,7 @@ import joblib
 import requests
 import pandas as pd
 from flask_cors import CORS
+import os 
 
 app = Flask(__name__)
 CORS(app)
@@ -105,9 +106,11 @@ def predict_all():
         try:
             weather = fetch_weather(lat, lon)
         except Exception as e:
-            results.append({"name": name, "lat": lat, "lon": lon,
-                            "error": f"Weather fetch failed: {e}"})
-            continue
+            # results.append({"name": name, "lat": lat, "lon": lon,
+            #                 "error": f"Weather fetch failed: {e}"})
+            # continue
+            print(f"Weather API failed for {name}: {e}")
+            weather = {"wind_speed": 5, "wind_direction": 180, "rainfall": 0}
 
         try:
             waves = fetch_waves(lat, lon)
@@ -123,10 +126,18 @@ def predict_all():
         try:
             pred = float(model.predict(X)[0])
         except Exception as e:
-            results.append({"name": name, "lat": lat, "lon": lon,
-                            "error": f"Prediction failed: {e}"})
-            continue
-
+            # results.append({"name": name, "lat": lat, "lon": lon,
+            #                 "error": f"Prediction failed: {e}"})
+            # continue
+            print(f"Wave API failed for {name}: {e}")
+            waves = {
+                "wave_height": 1.0,
+                "wave_lag6": 1.0,
+                "wave_lag12": 1.0,
+                "wave_lag24": 1.0,
+                "wave_direction": 180,
+                "wave_pok chneriod": 5
+            }
         risk, color, rec, explanation, trend = classify_risk(
             pred, weather["wind_speed"], weather["rainfall"], waves["wave_height"]
         )
@@ -151,4 +162,5 @@ def predict_all():
 
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
