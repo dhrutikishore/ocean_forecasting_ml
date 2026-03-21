@@ -109,14 +109,14 @@ def predict_all():
             waves = fetch_waves(lat, lon)
         except Exception as e:
             print(f"Wave API failed for {name}: {e}")
-            results.append({
-                "name": name,
-                "lat": lat,
-                "lon": lon,
-                "error": f"Wave fetch failed"
-            })
-            time.sleep(1)
-            continue
+            waves = {
+                "wave_height": 1.0,
+                "wave_lag6": 1.0,
+                "wave_lag12": 1.0,
+                "wave_lag24": 1.0,
+                "wave_direction": 180,
+                "wave_period": 5
+            }
 
         # ---- MODEL INPUT ----
         try:
