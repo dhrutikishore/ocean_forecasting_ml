@@ -6,7 +6,10 @@ import requests
 import os
 import time
 import datetime
-
+cache = {
+    "data": None,
+    "timestamp": None
+}
 app = Flask(__name__)
 CORS(app)
 
@@ -81,6 +84,10 @@ def home():
 # =========================
 @app.route("/predict_all", methods=["GET"])
 def predict_all():
+    cache = {
+    "data": None,
+    "timestamp": None
+}
     now = datetime.datetime.utcnow()
     month = now.month
     hour = now.hour
@@ -143,7 +150,8 @@ def predict_all():
 
         # ---- RATE LIMIT FIX ----
         time.sleep(1)
-
+    cache["data"] = results
+    cache["timestamp"] = time.time()
     return jsonify(results)
 
 # =========================
