@@ -11,7 +11,7 @@ app = Flask(__name__)
 CORS(app)
 
 # =========================
-# GLOBAL CACHE (FIXED)
+# GLOBAL CACHE
 # =========================
 cache = {
     "data": None,
@@ -26,13 +26,26 @@ model_path = os.path.join(BASE_DIR, "models", "ocean_model.pkl")
 model = joblib.load(model_path)
 
 # =========================
-# LOCATIONS
+# LOCATIONS (EXPANDED)
 # =========================
 LOCATIONS = [
+    # Bay of Bengal
     {"name": "Puri", "lat": 19.84, "lon": 85.82},
     {"name": "Gopalpur", "lat": 19.26, "lon": 84.91},
     {"name": "Chennai", "lat": 13.08, "lon": 80.27},
+    {"name": "Visakhapatnam", "lat": 17.69, "lon": 83.22},
+    {"name": "Paradip", "lat": 20.27, "lon": 86.67},
+    {"name": "Digha", "lat": 21.62, "lon": 87.50},
+
+    # Arabian Sea
     {"name": "Mumbai", "lat": 19.07, "lon": 72.87},
+    {"name": "Goa", "lat": 15.49, "lon": 73.82},
+    {"name": "Mangalore", "lat": 12.91, "lon": 74.85},
+    {"name": "Kochi", "lat": 9.93, "lon": 76.26},
+    {"name": "Kandla", "lat": 23.03, "lon": 70.22},
+
+    # Southern tip
+    {"name": "Kanyakumari", "lat": 8.08, "lon": 77.54},
 ]
 
 # =========================
@@ -67,9 +80,18 @@ def fetch_waves(lat, lon):
     }
 
 # =========================
-# RISK CLASSIFICATION
+# HYBRID RISK SYSTEM
 # =========================
 def classify_risk(pred, wind, rain, wave):
+
+    # 🚨 REAL-WORLD OVERRIDE
+    if wave > 2.5 or wind > 25:
+        return "HIGH", "red", "Avoid sea activity", "Dangerous sea state", "Worsening"
+
+    if wave > 1.5 or wind > 15:
+        return "MEDIUM", "orange", "Be cautious", "Moderate sea state", "Unstable"
+
+    # 🤖 ML fallback
     if pred > 2.5:
         return "HIGH", "red", "Avoid sea activity", "High waves expected", "Likely to worsen"
     elif pred > 1.5:
@@ -90,12 +112,12 @@ def home():
 @app.route("/predict_all", methods=["GET"])
 def predict_all():
 
-    # 🔥 CACHE CHECK (10 minutes)
+    # 🔥 CACHE (10 min)
     if cache["data"] and (time.time() - cache["timestamp"] < 600):
         print("Using cached data")
         return jsonify(cache["data"])
 
-    print("Fetching fresh data from API")
+    print("Fetching fresh data")
 
     now = datetime.datetime.utcnow()
     month = now.month
@@ -110,7 +132,7 @@ def predict_all():
         try:
             weather = fetch_weather(lat, lon)
         except Exception as e:
-            print(f"Weather API failed for {name}: {e}")
+            print(f"Weather failed for {name}: {e}")
             weather = {
                 "wind_speed": 5 + (lat % 3),
                 "wind_direction": 180,
@@ -121,19 +143,19 @@ def predict_all():
         try:
             waves = fetch_waves(lat, lon)
         except Exception as e:
-            print(f"Wave API failed for {name}: {e}")
+            print(f"Wave failed for {name}: {e}")
 
-            # 🔥 SMART FALLBACK (DIFFERENT VALUES)
+            # 🔥 SMART FALLBACK (VARIED)
             waves = {
-                "wave_height": 0.8 + (lat % 1),
-                "wave_lag6": 0.9 + (lon % 1),
-                "wave_lag12": 1.0,
-                "wave_lag24": 1.1,
-                "wave_direction": 180 + (lat % 20),
-                "wave_period": 5 + (lon % 2)
+                "wave_height": 0.8 + (lat % 2),   # varies
+                "wave_lag6": 1.0,
+                "wave_lag12": 1.2,
+                "wave_lag24": 1.3,
+                "wave_direction": 180 + (lat % 30),
+                "wave_period": 4 + (lon % 3)
             }
 
-        # ---- MODEL INPUT ----
+        # ---- MODEL ----
         try:
             all_features = {**weather, **waves, "month": month, "hour": hour}
             X = pd.DataFrame([{k: all_features.get(k) for k in model.feature_names_in_}])
@@ -142,7 +164,7 @@ def predict_all():
             print(f"Prediction failed for {name}: {e}")
             pred = 1.0 + (lat % 1)
 
-        # ---- CLASSIFICATION ----
+        # ---- RISK ----
         risk, color, rec, explanation, trend = classify_risk(
             pred, weather["wind_speed"], weather["rainfall"], waves["wave_height"]
         )
@@ -163,10 +185,10 @@ def predict_all():
             "trend": trend,
         })
 
-        # 🔥 SLIGHT DELAY (avoid bursts)
-        time.sleep(0.5)
+        # 🔥 RATE LIMIT CONTROL
+        time.sleep(0.4)
 
-    # 🔥 SAVE CACHE
+    # SAVE CACHE
     cache["data"] = results
     cache["timestamp"] = time.time()
 
