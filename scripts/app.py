@@ -8,7 +8,10 @@ import os
 app = Flask(__name__)
 CORS(app)
 
-model = joblib.load("models/ocean_model.pkl")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+model_path = os.path.join(BASE_DIR, "models", "ocean_model.pkl")
+
+model = joblib.load(model_path)
 
 LOCATIONS = [
     {"name": "Puri",     "lat": 19.84, "lon": 85.82},
