@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ocean Forecast Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+  :root {
+    --bg:      #050e1a;
+    --surface: #0a1628;
+    --border:  #132038;
+    --low:     #00e5a0;
+    --medium:  #f5a623;
+    --high:    #ff4757;
+    --text:    #e8f4fd;
+    --muted:   #5a7a99;
+    --mono:    'Space Mono', monospace;
+    --sans:    'DM Sans', sans-serif;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,229,160,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,229,160,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+    animation: drift 20s linear infinite;
+    pointer-events: none; z-index: 0;
+  }
+  @keyframes drift { 0% { transform:translateY(0); } 100% { transform:translateY(40px); } }
+  .wrapper { position:relative; z-index:1; }
+  header {
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .logo { font-family:var(--mono); font-size:13px; color:var(--low); letter-spacing:.12em; text-transform:uppercase; }
+  .logo span { color:var(--muted); margin:0 8px; }
+  h1 { font-family:var(--mono); font-size:22px; font-weight:700; color:var(--text); }
+  .status-pill {
+    font-family:var(--mono); font-size:11px; padding:5px 12px;
+    border-radius:20px; border:1px solid var(--low); color:var(--low);
+    display:flex; align-items:center; gap:6px;
+  }
+  .dot { width:6px; height:6px; border-radius:50%; background:var(--low); animation:pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .main { display:grid; grid-template-columns:1fr 380px; height:calc(100vh - 73px); }
+  #map { height:100%; background:var(--surface); border-right:1px solid var(--border); }
+  .sidebar { display:flex; flex-direction:column; overflow-y:auto; background:var(--surface); }
+  .sidebar-header {
+    padding:20px 24px 14px; border-bottom:1px solid var(--border);
+    font-family:var(--mono); font-size:11px; color:var(--muted);
+    letter-spacing:.1em; text-transform:uppercase;
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .refresh-btn {
+    background:none; border:1px solid var(--border); color:var(--muted);
+    font-family:var(--mono); font-size:10px; padding:4px 10px;
+    border-radius:4px; cursor:pointer; transition:all .2s; letter-spacing:.06em;
+  }
+  .refresh-btn:hover { border-color:var(--low); color:var(--low); }
+  .card {
+    padding:18px 24px; border-bottom:1px solid var(--border);
+    cursor:pointer; transition:background .15s;
+    position:relative; overflow:hidden;
+  }
+  .card::before {
+    content:''; position:absolute; left:0; top:0; bottom:0; width:3px;
+    background:var(--card-color, var(--muted)); transition:width .2s;
+  }
+  .card:hover { background:rgba(255,255,255,0.02); }
+  .card:hover::before { width:5px; }
+  .card-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+  .loc-name { font-family:var(--mono); font-size:14px; font-weight:700; color:var(--text); }
+  .loc-coords { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:2px; }
+  .risk-badge {
+    font-family:var(--mono); font-size:10px; font-weight:700;
+    padding:4px 10px; border-radius:3px; letter-spacing:.08em; text-transform:uppercase;
+    background:color-mix(in srgb, var(--card-color) 15%, transparent);
+    color:var(--card-color);
+    border:1px solid color-mix(in srgb, var(--card-color) 40%, transparent);
+  }
+  .metrics { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+  .metric {
+    background:rgba(255,255,255,0.03); border:1px solid var(--border);
+    border-radius:6px; padding:8px 10px;
+  }
+  .metric-label { font-family:var(--mono); font-size:9px; color:var(--muted); letter-spacing:.08em; text-transform:uppercase; margin-bottom:3px; }
+  .metric-value { font-family:var(--mono); font-size:16px; font-weight:700; color:var(--text); }
+  .metric-unit { font-size:10px; color:var(--muted); font-weight:400; }
+  .wave-bar-wrap { margin-bottom:8px; }
+  .wave-bar-label { display:flex; justify-content:space-between; font-family:var(--mono); font-size:9px; color:var(--muted); margin-bottom:4px; letter-spacing:.06em; }
+  .wave-bar-track { height:4px; background:var(--border); border-radius:2px; overflow:hidden; }
+  .wave-bar-fill { height:100%; border-radius:2px; background:var(--card-color); transition:width 1s cubic-bezier(.4,0,.2,1); width:0%; }
+  .recommendation { font-size:12px; color:var(--muted); line-height:1.5; }
+  .trend { font-family:var(--mono); font-size:10px; color:var(--muted); margin-top:6px; display:flex; align-items:center; gap:5px; }
+  .loading { padding:40px 24px; text-align:center; font-family:var(--mono); font-size:12px; color:var(--muted); letter-spacing:.08em; }
+  .loading-bar { width:100%; height:2px; background:var(--border); border-radius:1px; margin-top:16px; overflow:hidden; }
+  .loading-bar-fill { height:100%; background:var(--low); border-radius:1px; animation:load 1.5s ease-in-out infinite; }
+  @keyframes load { 0%{width:0%;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:0%;margin-left:100%} }
+  .error-card { padding:18px 24px; border-bottom:1px solid var(--border); font-family:var(--mono); font-size:11px; color:var(--high); line-height:1.7; }
+  .last-updated { padding:14px 24px; font-family:var(--mono); font-size:10px; color:var(--muted); border-top:1px solid var(--border); margin-top:auto; letter-spacing:.06em; }
+  .leaflet-container { background:#050e1a !important; }
+  .leaflet-tile { filter:invert(1) hue-rotate(180deg) saturate(0.6) brightness(0.7); }
+  .leaflet-popup-content-wrapper { background:#0a1628; border:1px solid #132038; border-radius:6px; box-shadow:none; }
+  .leaflet-popup-tip { background:#0a1628; }
+  .leaflet-popup-content { margin:10px 14px; }
+  .custom-marker {
+    width:36px; height:36px; border-radius:50%; border:2px solid;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Space Mono',monospace; font-size:10px; font-weight:700;
+    cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <header>
+    <div>
+      <div class="logo">Ocean Forecast <span>/</span> Indian Coast</div>
+      <h1>Wave Risk Monitor</h1>
+    </div>
+    <div class="status-pill"><span class="dot"></span>LIVE</div>
+  </header>
+  <div class="main">
+    <div id="map"></div>
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span>Coastal Locations</span>
+        <button class="refresh-btn" onclick="loadData()">REFRESH</button>
+      </div>
+      <div id="cards">
+        <div class="loading">
+          FETCHING FORECAST DATA
+          <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+        </div>
+      </div>
+      <div class="last-updated" id="last-updated"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // -------------------------------------------------------
+  // CHANGE THIS to your Render URL after deployment
+  // e.g. 'https://ocean-forecasting-api.onrender.com/predict_all'
+  // -------------------------------------------------------
+  const API_URL = '/predict_all';
+
+  const COLOR_MAP = { green:'#00e5a0', orange:'#f5a623', red:'#ff4757' };
+  let map, markers = {};
+
+  function initMap() {
+    map = L.map('map', { zoomControl:false }).setView([16, 80], 5);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution:'© OpenStreetMap'
+    }).addTo(map);
+    L.control.zoom({ position:'bottomright' }).addTo(map);
+  }
+
+  function getColor(c) { return COLOR_MAP[c] || '#5a7a99'; }
+  function barWidth(pred) { return Math.min((pred / 4) * 100, 100).toFixed(1); }
+  function trendArrow(t) { return t.includes('worsen') ? '↑' : '↓'; }
+
+  function renderCards(locations) {
+    const container = document.getElementById('cards');
+    container.innerHTML = '';
+    locations.forEach(loc => {
+      if (loc.error) {
+        container.innerHTML += `<div class="error-card">${loc.name}: ${loc.error}</div>`;
+        return;
+      }
+      const color = getColor(loc.color);
+      container.innerHTML += `
+        <div class="card" style="--card-color:${color}" onclick="flyTo(${loc.lat},${loc.lon})">
+          <div class="card-top">
+            <div>
+              <div class="loc-name">${loc.name}</div>
+              <div class="loc-coords">${loc.lat}°N ${loc.lon}°E</div>
+            </div>
+            <div class="risk-badge">${loc.risk}</div>
+          </div>
+          <div class="metrics">
+            <div class="metric">
+              <div class="metric-label">Current wave</div>
+              <div class="metric-value">${loc.wave_height.toFixed(2)}<span class="metric-unit"> m</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Forecast 24h</div>
+              <div class="metric-value">${loc.prediction.toFixed(2)}<span class="metric-unit"> m</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Wind speed</div>
+              <div class="metric-value">${loc.wind_speed.toFixed(1)}<span class="metric-unit"> km/h</span></div>
+            </div>
+            <div class="metric">
+              <div class="metric-label">Rainfall</div>
+              <div class="metric-value">${loc.rainfall.toFixed(1)}<span class="metric-unit"> mm</span></div>
+            </div>
+          </div>
+          <div class="wave-bar-wrap">
+            <div class="wave-bar-label"><span>wave intensity</span><span>${loc.prediction.toFixed(2)}m / 4m</span></div>
+            <div class="wave-bar-track"><div class="wave-bar-fill" id="bar-${loc.name}"></div></div>
+          </div>
+          <div class="recommendation">${loc.recommendation}</div>
+          <div class="trend"><span>${trendArrow(loc.trend)}</span>${loc.trend}</div>
+        </div>`;
+
+      setTimeout(() => {
+        const bar = document.getElementById(`bar-${loc.name}`);
+        if (bar) bar.style.width = barWidth(loc.prediction) + '%';
+      }, 100);
+
+      addMarker(loc, color);
+    });
+
+    const now = new Date();
+    document.getElementById('last-updated').textContent =
+      `LAST UPDATED — ${now.toLocaleTimeString()} · AUTO-REFRESH 15 MIN`;
+  }
+
+  function addMarker(loc, color) {
+    if (markers[loc.name]) map.removeLayer(markers[loc.name]);
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="custom-marker" style="background:${color}22;border-color:${color};color:${color}">${loc.risk[0]}</div>`,
+      iconSize: [36,36], iconAnchor: [18,18],
+    });
+    markers[loc.name] = L.marker([loc.lat, loc.lon], { icon })
+      .addTo(map)
+      .bindPopup(`
+        <div style="font-family:'Space Mono',monospace;font-size:11px;line-height:1.9;color:#e8f4fd">
+          <strong>${loc.name}</strong><br>
+          Risk: ${loc.risk}<br>
+          Now: ${loc.wave_height.toFixed(2)} m<br>
+          24h forecast: ${loc.prediction.toFixed(2)} m<br>
+          Wind: ${loc.wind_speed.toFixed(1)} km/h
+        </div>`);
+  }
+
+  function flyTo(lat, lon) { map.flyTo([lat, lon], 8, { duration:1.2 }); }
+
+  async function loadData() {
+    document.getElementById('cards').innerHTML = `
+      <div class="loading">FETCHING FORECAST DATA
+        <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+      </div>`;
+    try {
+      const res = await fetch(API_URL);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      renderCards(data);
+    } catch (err) {
+      document.getElementById('cards').innerHTML = `
+        <div class="error-card">
+          Failed to connect to API.<br><br>
+          URL: ${API_URL}<br><br>
+          Error: ${err.message}<br><br>
+          Make sure the Flask server is running.
+        </div>`;
+    }
+  }
+
+  initMap();
+  loadData();
+  setInterval(loadData, 15 * 60 * 1000);
+</script>
+</body>
+</html>
