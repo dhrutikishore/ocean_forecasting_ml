@@ -90,20 +90,33 @@ def fetch_waves(lat, lon):
 # =========================
 def classify_risk(pred, wind, rain, wave):
 
-    # REAL-WORLD RULES
-    if wave > 2.5 or wind > 25:
-        return "HIGH", "red", "Avoid sea activity", "Dangerous sea state", "Worsening"
+    score = 0
 
-    if wave > 1.5 or wind > 15:
-        return "MEDIUM", "orange", "Be cautious", "Moderate sea state", "Unstable"
+    # Wave impact
+    if wave > 2.5:
+        score += 2
+    elif wave > 1.5:
+        score += 1
 
-    # ML FALLBACK
+    # Wind impact
+    if wind > 25:
+        score += 2
+    elif wind > 15:
+        score += 1
+
+    # ML prediction impact
     if pred > 2.5:
-        return "HIGH", "red", "Avoid sea activity", "High waves expected", "Likely to worsen"
+        score += 2
     elif pred > 1.5:
-        return "MEDIUM", "orange", "Be cautious", "Moderate waves", "Stable"
+        score += 1
+
+    # FINAL DECISION
+    if score >= 4:
+        return "HIGH", "red", "Avoid sea activity", "Dangerous conditions", "Worsening"
+    elif score >= 2:
+        return "MEDIUM", "orange", "Be cautious", "Moderate conditions", "Unstable"
     else:
-        return "LOW", "green", "Safe conditions", "Low waves", "Improving"
+        return "LOW", "green", "Safe conditions", "Calm sea", "Improving"
 
 # =========================
 # HOME ROUTE
