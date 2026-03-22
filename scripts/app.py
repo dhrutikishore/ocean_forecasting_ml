@@ -177,10 +177,7 @@ def predict_all():
     cache["data"] = results
     cache["timestamp"] = time.time()
 
-    return jsonify({
-        "data": results,
-        "last_updated": datetime.datetime.utcnow().strftime("%H:%M UTC")
-    })
+    return jsonify(results)
 
 # =========================
 # RUN
