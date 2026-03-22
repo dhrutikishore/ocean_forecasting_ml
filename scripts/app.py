@@ -17,6 +17,7 @@ cache = {
     "data": None,
     "timestamp": 0
 }
+CACHE_DURATION = 300  # 5 mins
 
 # =========================
 # LOAD MODEL
@@ -85,33 +86,64 @@ def fetch_waves(lat, lon):
         }
 
 # =========================
-# HYBRID RISK SYSTEM
+# EXPLAINABLE RISK SYSTEM
 # =========================
 def classify_risk(pred, wind, rain, wave):
 
-    score = 0
+    reasons = []
+    actions = []
 
+    # ---- WAVE ANALYSIS ----
     if wave > 2.5:
-        score += 2
+        reasons.append(f"High waves ({wave:.2f}m)")
+        actions.append("Avoid sea travel")
     elif wave > 1.5:
-        score += 1
-
-    if wind > 25:
-        score += 2
-    elif wind > 15:
-        score += 1
-
-    if pred > 2.5:
-        score += 2
-    elif pred > 1.5:
-        score += 1
-
-    if score >= 4:
-        return "HIGH", "red", "Avoid sea activity", "Dangerous conditions", "Worsening"
-    elif score >= 2:
-        return "MEDIUM", "orange", "Be cautious", "Moderate conditions", "Unstable"
+        reasons.append(f"Moderate waves ({wave:.2f}m)")
+        actions.append("Operate boats cautiously")
     else:
-        return "LOW", "green", "Safe conditions", "Calm sea", "Improving"
+        reasons.append(f"Calm waves ({wave:.2f}m)")
+
+    # ---- WIND ANALYSIS ----
+    if wind > 25:
+        reasons.append(f"Strong winds ({wind:.1f} km/h)")
+        actions.append("Avoid small boats & fishing")
+    elif wind > 15:
+        reasons.append(f"Windy conditions ({wind:.1f} km/h)")
+        actions.append("Use safety gear")
+
+    # ---- MODEL CONTRIBUTION ----
+    if pred > 2.5:
+        reasons.append("Model predicts severe instability")
+    elif pred > 1.5:
+        reasons.append("Model predicts moderate instability")
+
+    # ---- SCORE SYSTEM ----
+    score = 0
+    if wave > 2.5: score += 2
+    elif wave > 1.5: score += 1
+
+    if wind > 25: score += 2
+    elif wind > 15: score += 1
+
+    if pred > 2.5: score += 2
+    elif pred > 1.5: score += 1
+
+    # ---- FINAL RISK ----
+    if score >= 4:
+        risk = "HIGH"
+        color = "red"
+    elif score >= 2:
+        risk = "MEDIUM"
+        color = "orange"
+    else:
+        risk = "LOW"
+        color = "green"
+
+    explanation = ", ".join(reasons)
+    recommendation = ", ".join(actions) if actions else "Safe for normal marine activity"
+    trend = "Worsening" if risk == "HIGH" else ("Unstable" if risk == "MEDIUM" else "Improving")
+
+    return risk, color, recommendation, explanation, trend
 
 # =========================
 # HOME ROUTE
@@ -126,7 +158,7 @@ def home():
 @app.route("/predict_all", methods=["GET"])
 def predict_all():
 
-    if cache["data"]:
+    if cache["data"] and (time.time() - cache["timestamp"] < CACHE_DURATION):
         return jsonify(cache["data"])
 
     now = datetime.datetime.utcnow()
@@ -151,7 +183,7 @@ def predict_all():
             X = pd.DataFrame([{k: all_features.get(k) for k in model.feature_names_in_}])
             pred = float(model.predict(X)[0])
         except:
-            pred = 1.0 + (lat % 1)
+            pred = waves["wave_height"]
 
         risk, color, rec, explanation, trend = classify_risk(
             pred, weather["wind_speed"], weather["rainfall"], waves["wave_height"]
@@ -169,10 +201,12 @@ def predict_all():
             "risk": risk,
             "color": color,
             "recommendation": rec,
-            "explanation": f"Wave {waves['wave_height']:.2f}m & Wind {weather['wind_speed']:.1f} km/h",
+            "explanation": explanation,
             "trend": trend,
             "alert": "⚠️ HIGH RISK ZONE" if risk == "HIGH" else None,
         })
+
+        time.sleep(0.4)
 
     cache["data"] = results
     cache["timestamp"] = time.time()
