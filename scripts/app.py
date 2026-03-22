@@ -26,7 +26,7 @@ model_path = os.path.join(BASE_DIR, "models", "ocean_model.pkl")
 model = joblib.load(model_path)
 
 # =========================
-# LIMITED LOCATIONS (FAST)
+# LOCATIONS
 # =========================
 LOCATIONS = [
     {"name": "Puri", "lat": 19.84, "lon": 85.82},
@@ -37,7 +37,7 @@ LOCATIONS = [
 ]
 
 # =========================
-# FETCH WEATHER (FAST + SAFE)
+# FETCH WEATHER
 # =========================
 def fetch_weather(lat, lon):
     try:
@@ -57,7 +57,7 @@ def fetch_weather(lat, lon):
         }
 
 # =========================
-# FETCH WAVES (FAST + SAFE)
+# FETCH WAVES
 # =========================
 def fetch_waves(lat, lon):
     try:
@@ -75,7 +75,6 @@ def fetch_waves(lat, lon):
             "wave_period": res["hourly"]["wave_period"][-1]
         }
     except:
-        # SMART FALLBACK
         return {
             "wave_height": 0.8 + (lat % 2),
             "wave_lag6": 1.0,
@@ -92,25 +91,21 @@ def classify_risk(pred, wind, rain, wave):
 
     score = 0
 
-    # Wave impact
     if wave > 2.5:
         score += 2
     elif wave > 1.5:
         score += 1
 
-    # Wind impact
     if wind > 25:
         score += 2
     elif wind > 15:
         score += 1
 
-    # ML prediction impact
     if pred > 2.5:
         score += 2
     elif pred > 1.5:
         score += 1
 
-    # FINAL DECISION
     if score >= 4:
         return "HIGH", "red", "Avoid sea activity", "Dangerous conditions", "Worsening"
     elif score >= 2:
@@ -126,17 +121,13 @@ def home():
     return render_template("index.html")
 
 # =========================
-# MAIN API (FAST RESPONSE)
+# MAIN API
 # =========================
 @app.route("/predict_all", methods=["GET"])
 def predict_all():
 
-    # 🔥 ALWAYS RETURN CACHE IF EXISTS
     if cache["data"]:
-        print("Returning cached data")
         return jsonify(cache["data"])
-
-    print("Fetching fresh data")
 
     now = datetime.datetime.utcnow()
     month = now.month
@@ -149,6 +140,11 @@ def predict_all():
 
         weather = fetch_weather(lat, lon)
         waves = fetch_waves(lat, lon)
+
+        # 🌪️ CYCLONE SIMULATION (ODISHA REGION)
+        if 18 <= lat <= 21 and 84 <= lon <= 88:
+            waves["wave_height"] += 1.5
+            weather["wind_speed"] += 10
 
         try:
             all_features = {**weather, **waves, "month": month, "hour": hour}
@@ -173,15 +169,18 @@ def predict_all():
             "risk": risk,
             "color": color,
             "recommendation": rec,
-            "explanation": explanation,
+            "explanation": f"Wave {waves['wave_height']:.2f}m & Wind {weather['wind_speed']:.1f} km/h",
             "trend": trend,
+            "alert": "⚠️ HIGH RISK ZONE" if risk == "HIGH" else None,
         })
 
-    # SAVE CACHE
     cache["data"] = results
     cache["timestamp"] = time.time()
 
-    return jsonify(results)
+    return jsonify({
+        "data": results,
+        "last_updated": datetime.datetime.utcnow().strftime("%H:%M UTC")
+    })
 
 # =========================
 # RUN
